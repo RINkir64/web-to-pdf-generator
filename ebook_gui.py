@@ -552,13 +552,26 @@ class EbookGeneratorApp:
                 for idx, (page_url, c_title, h_content) in enumerate(valid_data, 1):
                     soup = BeautifulSoup(h_content, "html.parser")
                     
-                    # Remove all <style> blocks from body content (we provide our own)
+                    # Remove elements hidden by _hide_header_footer (display:none)
+                    for tag_name in ["header", "footer", "nav", "aside", "iframe"]:
+                        for el in soup.find_all(tag_name):
+                            el.decompose()
+                    for cls in ["sidebar", "widget", "menu", "ads", "comments", "share"]:
+                        for el in soup.find_all(class_=cls):
+                            el.decompose()
+                    
+                    # Remove all <style> blocks (we provide our own clean styles)
                     for style_tag in soup.find_all("style"):
                         style_tag.decompose()
                     
-                    # Strip inline style attributes that cause spacing/layout issues
+                    # Clean inline styles: remove spacing/justify properties but keep display:none
+                    import re as _re
                     for el in soup.find_all(True):
                         if el.has_attr("style"):
+                            style_val = el["style"]
+                            if "display" in style_val and "none" in style_val:
+                                el.decompose()
+                                continue
                             del el["style"]
                     
                     # Convert <picture> elements to plain <img>
