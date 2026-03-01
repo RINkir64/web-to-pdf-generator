@@ -1,6 +1,7 @@
 import zipfile
 import uuid
 import datetime
+import re
 
 class EpubBuilder:
     def __init__(self, title, language="ja"):
@@ -121,6 +122,16 @@ class EpubBuilder:
             # chapters
             for fname, _, content in self.chapters:
                 content_str = content if isinstance(content, str) else content.decode('utf-8')
+                
+                # Remove <base href="..."> tags — these break relative image paths inside EPUB
+                content_str = re.sub(r'<base\s+[^>]*>', '', content_str, flags=re.IGNORECASE)
+                
+                # Remove leftover <script> tags (not valid in EPUB XHTML)
+                content_str = re.sub(r'<script[\s\S]*?</script>', '', content_str, flags=re.IGNORECASE)
+                
+                # Remove <link> to external stylesheets (not accessible in EPUB)
+                content_str = re.sub(r'<link\s+[^>]*rel=["\']stylesheet["\'][^>]*/?\s*>', '', content_str, flags=re.IGNORECASE)
+                
                 if 'xmlns="http://www.w3.org/1999/xhtml"' not in content_str:
                     content_str = content_str.replace('<html', '<html xmlns="http://www.w3.org/1999/xhtml"', 1)
                 

@@ -552,14 +552,27 @@ class EbookGeneratorApp:
                 for idx, (page_url, c_title, h_content) in enumerate(valid_data, 1):
                     soup = BeautifulSoup(h_content, "html.parser")
                     
+                    # Convert <picture> elements to plain <img>
+                    for picture in soup.find_all("picture"):
+                        img_tag = picture.find("img")
+                        if img_tag:
+                            source = picture.find("source")
+                            if source and source.get("srcset") and not img_tag.get("src"):
+                                srcset_val = source["srcset"]
+                                img_tag["src"] = srcset_val.split(",")[0].strip().split(" ")[0]
+                            picture.replace_with(img_tag)
+
                     for img in soup.find_all("img"):
                         # Support lazy-loaded images gracefully
-                        src = img.get("data-src") or img.get("data-original") or img.get("src")
-                        if not src: 
+                        src = img.get("data-src") or img.get("data-original") or img.get("data-lazy-src") or img.get("src")
+                        if not src or src.startswith("data:image/svg"):
+                            img.decompose()
                             continue
                         
                         # Remove problematic attributes for EPUB readers
-                        for attr in ["srcset", "sizes", "loading", "class", "style"]:
+                        for attr in ["srcset", "sizes", "loading", "class", "style",
+                                     "data-src", "data-original", "data-lazy-src",
+                                     "data-srcset", "decoding", "fetchpriority", "width", "height"]:
                             if img.has_attr(attr):
                                 del img[attr]
                                 
@@ -567,25 +580,42 @@ class EbookGeneratorApp:
                         if abs_src not in image_cache:
                             try:
                                 if abs_src.startswith("data:"):
-                                    with urlopen(abs_src) as response:
-                                        img_data = response.read()
-                                        ctype = response.headers.get_content_type()
+                                    # Handle base64 data URIs
+                                    import re as _re
+                                    m = _re.match(r'data:([^;]+);base64,(.*)', abs_src)
+                                    if m:
+                                        ctype = m.group(1)
+                                        img_data = base64.b64decode(m.group(2))
                                         ext = mimetypes.guess_extension(ctype) or ".png"
+                                    else:
+                                        with urlopen(abs_src) as response:
+                                            img_data = response.read()
+                                            ctype = response.headers.get_content_type()
+                                            ext = mimetypes.guess_extension(ctype) or ".png"
                                 else:
                                     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
                                     resp = requests.get(abs_src, headers=headers, timeout=15)
-                                    if resp.status_code == 200:
-                                        img_data = resp.content
-                                        ctype = resp.headers.get("content-type", "image/jpeg")
-                                        ext = mimetypes.guess_extension(ctype) or ".jpg"
-                                    else:
+                                    if resp.status_code != 200:
+                                        img.decompose()
+                                        continue
+                                    img_data = resp.content
+                                    ctype = resp.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+                                    # Validate it's actually an image
+                                    if not ctype.startswith("image/"):
+                                        img.decompose()
+                                        continue
+                                    ext = mimetypes.guess_extension(ctype) or ".jpg"
+                                    # Skip tiny tracking pixels (< 100 bytes)
+                                    if len(img_data) < 100:
+                                        img.decompose()
                                         continue
                                         
                                 img_filename = f"images/img_{len(image_cache)}{ext}"
                                 book.add_image(file_name=img_filename, content=img_data, media_type=ctype)
                                 image_cache[abs_src] = img_filename
                             except Exception as e:
-                                print(f"Image fetch error: {e}")
+                                print(f"Image fetch error ({abs_src}): {e}")
+                                img.decompose()
                                 continue
                                 
                         if abs_src in image_cache:
@@ -757,6 +787,36 @@ class EbookGeneratorApp:
         except Exception as e:
             print("Scroll failed:", e)
 
+        # Force lazy-loaded images to resolve their real src
+        lazy_load_script = """
+        () => {
+            // Swap data-src / data-original / data-lazy-src into src
+            document.querySelectorAll('img').forEach(img => {
+                const lazySrc = img.getAttribute('data-src') || img.getAttribute('data-original') || img.getAttribute('data-lazy-src');
+                if (lazySrc && (!img.src || img.src.includes('placeholder') || img.src.includes('data:image/svg'))) {
+                    img.src = lazySrc;
+                }
+            });
+            // Convert <picture><source> into plain <img> src
+            document.querySelectorAll('picture').forEach(pic => {
+                const img = pic.querySelector('img');
+                if (!img) return;
+                const source = pic.querySelector('source');
+                if (source) {
+                    const srcset = source.getAttribute('srcset');
+                    if (srcset && (!img.src || img.src.includes('placeholder'))) {
+                        img.src = srcset.split(',')[0].trim().split(' ')[0];
+                    }
+                }
+            });
+        }
+        """
+        try:
+            page.evaluate(lazy_load_script)
+            time.sleep(1)
+        except Exception as e:
+            print("Lazy-load resolve failed:", e)
+
         math_script = """
         () => {
             return new Promise((resolve) => {
@@ -820,11 +880,12 @@ class EbookGeneratorApp:
             <head>
                 <meta charset="utf-8">
                 <title>{title}</title>
-                <base href="{url}">
                 <style>
                     body {{ font-family: -apple-system, sans-serif; line-height: 1.6; padding: 1em; max-width: 900px; margin: 0 auto; color: #333; }}
-                    img {{ max-width: 100%; height: auto; }}
+                    img {{ max-width: 100%; height: auto; display: block; }}
                     h1.chapter-generated-title {{ border-bottom: 2px solid #eee; padding-bottom: 0.3em; margin-bottom: 1em; }}
+                    figure {{ margin: 1em 0; text-align: center; }}
+                    figcaption {{ font-size: 0.9em; color: #666; margin-top: 0.5em; }}
                 </style>
             </head>
             <body>
@@ -834,7 +895,7 @@ class EbookGeneratorApp:
             </html>
             """
         else:
-            clean_html = f"<html><head><title>{title}</title><base href='{url}'></head><body><h1 class='chapter-generated-title'>{title}</h1>{body_content}</body></html>"
+            clean_html = f"<html><head><title>{title}</title></head><body><h1 class='chapter-generated-title'>{title}</h1>{body_content}</body></html>"
             
         return title, clean_html
 
