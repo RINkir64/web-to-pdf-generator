@@ -553,9 +553,16 @@ class EbookGeneratorApp:
                     soup = BeautifulSoup(h_content, "html.parser")
                     
                     for img in soup.find_all("img"):
-                        src = img.get("src")
-                        if not src: continue
+                        # Support lazy-loaded images gracefully
+                        src = img.get("data-src") or img.get("data-original") or img.get("src")
+                        if not src: 
+                            continue
                         
+                        # Remove problematic attributes for EPUB readers
+                        for attr in ["srcset", "sizes", "loading", "class", "style"]:
+                            if img.has_attr(attr):
+                                del img[attr]
+                                
                         abs_src = urljoin(page_url, src)
                         if abs_src not in image_cache:
                             try:
@@ -565,7 +572,8 @@ class EbookGeneratorApp:
                                         ctype = response.headers.get_content_type()
                                         ext = mimetypes.guess_extension(ctype) or ".png"
                                 else:
-                                    resp = requests.get(abs_src, timeout=10)
+                                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+                                    resp = requests.get(abs_src, headers=headers, timeout=15)
                                     if resp.status_code == 200:
                                         img_data = resp.content
                                         ctype = resp.headers.get("content-type", "image/jpeg")
@@ -581,6 +589,7 @@ class EbookGeneratorApp:
                                 continue
                                 
                         if abs_src in image_cache:
+                            # Relative path ensures Apple Books and other strict readers display the image
                             img["src"] = image_cache[abs_src]
                             
                     book.add_chapter(file_name=f"chap_{idx:03d}.xhtml", title=c_title, content=str(soup))
