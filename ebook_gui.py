@@ -554,24 +554,32 @@ class EbookGeneratorApp:
                     
                     # Remove elements hidden by _hide_header_footer (display:none)
                     for tag_name in ["header", "footer", "nav", "aside", "iframe"]:
-                        for el in soup.find_all(tag_name):
-                            el.decompose()
+                        for el in list(soup.find_all(tag_name)):
+                            try: el.decompose()
+                            except: pass
                     for cls in ["sidebar", "widget", "menu", "ads", "comments", "share"]:
-                        for el in soup.find_all(class_=cls):
-                            el.decompose()
+                        for el in list(soup.find_all(attrs={"class": lambda x: x and cls in str(x)})):
+                            try: el.decompose()
+                            except: pass
                     
                     # Remove all <style> blocks (we provide our own clean styles)
-                    for style_tag in soup.find_all("style"):
-                        style_tag.decompose()
+                    for style_tag in list(soup.find_all("style")):
+                        try: style_tag.decompose()
+                        except: pass
                     
                     # Clean inline styles: remove spacing/justify properties but keep display:none
-                    for el in soup.find_all(True):
-                        if el.has_attr("style"):
-                            style_val = el.get("style") or ""
-                            if "display" in style_val and "none" in style_val:
+                    for el in list(soup.find_all(True)):
+                        try:
+                            style_val = el.get("style")
+                            if style_val is None:
+                                continue
+                            style_str = str(style_val)
+                            if "display" in style_str and "none" in style_str:
                                 el.decompose()
                                 continue
                             del el["style"]
+                        except:
+                            pass
                     
                     # Convert <picture> elements to plain <img>
                     for picture in soup.find_all("picture"):
@@ -653,6 +661,8 @@ class EbookGeneratorApp:
                 self.root.after(0, messagebox.showinfo, self.tr("done"), self.tr("completed_msg", format=output_format, path=os.path.abspath(final_output)))
             
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             self.root.after(0, job_frame.update_progress, 0, self.tr("error"))
             self.root.after(0, self._show_error, self.tr("error_msg", e=e))
         finally:
