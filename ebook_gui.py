@@ -552,6 +552,15 @@ class EbookGeneratorApp:
                 for idx, (page_url, c_title, h_content) in enumerate(valid_data, 1):
                     soup = BeautifulSoup(h_content, "html.parser")
                     
+                    # Remove all <style> blocks from body content (we provide our own)
+                    for style_tag in soup.find_all("style"):
+                        style_tag.decompose()
+                    
+                    # Strip inline style attributes that cause spacing/layout issues
+                    for el in soup.find_all(True):
+                        if el.has_attr("style"):
+                            del el["style"]
+                    
                     # Convert <picture> elements to plain <img>
                     for picture in soup.find_all("picture"):
                         img_tag = picture.find("img")
@@ -881,11 +890,15 @@ class EbookGeneratorApp:
                 <meta charset="utf-8">
                 <title>{title}</title>
                 <style>
-                    body {{ font-family: -apple-system, sans-serif; line-height: 1.6; padding: 1em; max-width: 900px; margin: 0 auto; color: #333; }}
+                    * {{ letter-spacing: normal !important; word-spacing: normal !important; }}
+                    body {{ font-family: -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; line-height: 1.8; padding: 1em; max-width: 900px; margin: 0 auto; color: #333; text-align: left; }}
+                    p, li, dd, dt, td, th, span, div {{ text-align: left; }}
                     img {{ max-width: 100%; height: auto; display: block; }}
                     h1.chapter-generated-title {{ border-bottom: 2px solid #eee; padding-bottom: 0.3em; margin-bottom: 1em; }}
                     figure {{ margin: 1em 0; text-align: center; }}
                     figcaption {{ font-size: 0.9em; color: #666; margin-top: 0.5em; }}
+                    table {{ border-collapse: collapse; margin: 1em 0; }}
+                    td, th {{ padding: 0.3em 0.6em; }}
                 </style>
             </head>
             <body>
@@ -895,7 +908,9 @@ class EbookGeneratorApp:
             </html>
             """
         else:
-            clean_html = f"<html><head><title>{title}</title></head><body><h1 class='chapter-generated-title'>{title}</h1>{body_content}</body></html>"
+            clean_html = f"""<html><head><title>{title}</title>
+            <style>* {{ letter-spacing: normal !important; word-spacing: normal !important; }} body {{ text-align: left; }} p, li, dd, dt, td, th, span, div {{ text-align: left; }}</style>
+            </head><body><h1 class='chapter-generated-title'>{title}</h1>{body_content}</body></html>"""
             
         return title, clean_html
 
