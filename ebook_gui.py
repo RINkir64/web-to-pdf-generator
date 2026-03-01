@@ -565,10 +565,9 @@ class EbookGeneratorApp:
                         style_tag.decompose()
                     
                     # Clean inline styles: remove spacing/justify properties but keep display:none
-                    import re as _re
                     for el in soup.find_all(True):
                         if el.has_attr("style"):
-                            style_val = el["style"]
+                            style_val = el.get("style") or ""
                             if "display" in style_val and "none" in style_val:
                                 el.decompose()
                                 continue
