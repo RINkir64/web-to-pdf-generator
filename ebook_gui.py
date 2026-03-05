@@ -417,10 +417,13 @@ class EbookGeneratorApp:
 
     def start_conversion(self):
         selected_urls = []
+        selected_titles = []
         for item in self.tree.get_children():
             if self.url_selections.get(item, False):
+                title = self.tree.item(item, "values")[1]
                 url = self.tree.item(item, "values")[2]
                 selected_urls.append(url)
+                selected_titles.append(title)
                 
         if not selected_urls:
             messagebox.showwarning(self.tr("input_error_title"), self.tr("no_url_warn"))
@@ -443,9 +446,9 @@ class EbookGeneratorApp:
             job_frame.cancel_btn.config(command=cancel_clicked)
 
         workers = self.workers_var.get()
-        threading.Thread(target=self._conversion_thread, args=(selected_urls, output_format, clean_page, book_title, output_path, job_frame, job_cancel_event, workers), daemon=True).start()
+        threading.Thread(target=self._conversion_thread, args=(selected_urls, selected_titles, output_format, clean_page, book_title, output_path, job_frame, job_cancel_event, workers), daemon=True).start()
 
-    def _conversion_thread(self, selected_urls, output_format, clean_page, book_title, output_path, job_frame, cancel_event, max_workers):
+    def _conversion_thread(self, selected_urls, selected_titles, output_format, clean_page, book_title, output_path, job_frame, cancel_event, max_workers):
         try:
             total = len(selected_urls)
             max_workers = min(max_workers, total)
@@ -494,8 +497,10 @@ class EbookGeneratorApp:
                 output_merged_pdf = output_path
                 merger = PdfMerger()
                 merger.add_metadata({'/Title': book_title, '/Producer': 'Web to PDF eBook Generator'})
-                for pdf in pdf_files:
-                    if pdf and os.path.exists(pdf): merger.append(pdf)
+                for i, pdf in enumerate(pdf_files):
+                    if pdf and os.path.exists(pdf): 
+                        title = selected_titles[i] if i < len(selected_titles) else None
+                        merger.append(pdf, outline_item=title)
                 merger.write(output_merged_pdf)
                 merger.close()
                 final_output = output_merged_pdf

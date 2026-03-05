@@ -129,8 +129,10 @@ def main():
     selection = input("Selection (default 'all'): ").strip().lower()
 
     selected_urls = []
+    selected_titles = []
     if not selection or selection == 'all':
         selected_urls = [url for url, _ in candidates]
+        selected_titles = [title for _, title in candidates]
     else:
         # Parse complex selection like 1-5, 8
         parts = selection.split(',')
@@ -152,6 +154,7 @@ def main():
         for idx in sorted(list(indices)):
             if 1 <= idx <= len(candidates):
                 selected_urls.append(candidates[idx-1][0])
+                selected_titles.append(candidates[idx-1][1])
 
     if not selected_urls:
         print("No valid URLs selected.")
@@ -189,8 +192,9 @@ def main():
     output_merged_pdf = "Final_eBook.pdf"
     print(f"\nMerging {len(pdf_files)} PDFs into '{output_merged_pdf}'...")
     merger = PdfMerger()
-    for pdf in pdf_files:
-        merger.append(pdf)
+    for i, pdf in enumerate(pdf_files):
+        title = selected_titles[i] if i < len(selected_titles) else None
+        merger.append(pdf, outline_item=title)
     
     try:
         merger.write(output_merged_pdf)
